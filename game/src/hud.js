@@ -1,5 +1,6 @@
 // Permanent HUD: title, district + preset, compass strip, big speedometer,
-// FPS, and the control scheme written on screen (identical in every mode).
+// FPS, damage, the E-interaction prompt, a toast line, and the control
+// scheme written on screen (identical in every mode).
 export function createHud(city) {
   const el = {
     district: document.getElementById('district'),
@@ -7,6 +8,10 @@ export function createHud(city) {
     speed: document.getElementById('speed-num'),
     fps: document.getElementById('fps'),
     compass: document.getElementById('compass'),
+    prompt: document.getElementById('prompt'),
+    damage: document.getElementById('damage'),
+    toast: document.getElementById('toast'),
+    controls: document.getElementById('controls'),
   };
   const ctx = el.compass.getContext('2d');
 
@@ -36,12 +41,16 @@ export function createHud(city) {
   }
 
   return {
-    update({ camera, presetName, presetLabel, speedKmh, fps }) {
+    update({ camera, presetName, presetLabel, speedKmh, fps, mode, profileLabel, damage, prompt, toast, controls }) {
       const t = camera.getTarget();
       el.district.textContent = `${city.districtAt(t[0], t[2])} · ${presetLabel}`;
       el.preset.textContent = presetName;
       el.speed.textContent = `${Math.round(speedKmh)}`;
       el.fps.textContent = fps > 0 ? `${fps} fps` : '— fps';
+      if (el.prompt) el.prompt.textContent = prompt || '';
+      if (el.damage) el.damage.textContent = damage > 0 ? `Damage ${Math.round(damage)}%` : '';
+      if (el.toast) el.toast.textContent = toast || '';
+      if (el.controls && controls) el.controls.textContent = controls;
       drawCompass(camera.getYaw());
     },
   };

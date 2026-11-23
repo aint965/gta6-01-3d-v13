@@ -56,8 +56,34 @@ export function createMinimap(canvas, city) {
   }
 
   return {
-    draw(camera) {
+    draw(camera, dots) {
       ctx.drawImage(layer, 0, 0);
+      // Moving dots: traffic cars (white), drivable cars (coral ring),
+      // the player car (yellow), Mara (white diamond).
+      if (dots) {
+        for (const d of dots) {
+          if (d.kind === 'traffic') {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(X(d.x) - 1, Z(d.z) - 1, 2, 2);
+          } else if (d.kind === 'drivable') {
+            ctx.strokeStyle = '#d77f69';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(X(d.x), Z(d.z), 3, 0, Math.PI * 2);
+            ctx.stroke();
+          } else if (d.kind === 'player') {
+            ctx.fillStyle = '#f2c14e';
+            ctx.beginPath();
+            ctx.arc(X(d.x), Z(d.z), 3, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (d.kind === 'mara') {
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(X(d.x), Z(d.z), 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
       const t = camera.getTarget();
       const e = camera.eye();
       // View direction line + camera dot.

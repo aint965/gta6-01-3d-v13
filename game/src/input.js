@@ -1,10 +1,10 @@
-// Keyboard + mouse input. Drag looks around, scroll zooms, WASD flies the
-// camera, 1/2/3 or T cycles the lighting presets.
+// Keyboard + mouse input. Tracks held keys, reports edge presses (E,
+// Space) once per frame, and drives the orbit camera with drag/scroll.
+// The game logic (main.js) interprets the keys per mode — this module
+// never moves the camera or the player itself.
 export function createInput(canvas, camera, onPreset) {
   const keys = new Set();
-  let dragging = false;
-  let lastX = 0;
-  let lastY = 0;
+  const pressed = new Set();
 
   function key(e) {
     return e.code;
@@ -15,12 +15,16 @@ export function createInput(canvas, camera, onPreset) {
     if (e.code === 'Digit2') { onPreset('sunset'); return; }
     if (e.code === 'Digit3') { onPreset('night'); return; }
     if (e.code === 'KeyT') { onPreset('cycle'); return; }
+    if (!e.repeat) pressed.add(key(e));
     keys.add(key(e));
     if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => keys.delete(key(e)));
   window.addEventListener('blur', () => keys.clear());
 
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
   canvas.addEventListener('pointerdown', (e) => {
     dragging = true;
     lastX = e.clientX;
@@ -42,19 +46,21 @@ export function createInput(canvas, camera, onPreset) {
   }, { passive: false });
 
   return {
-    // Called once a frame: applies the held movement keys.
-    step(dt) {
-      const speed = 60 * dt;
-      let dx = 0;
-      let dz = 0;
-      let dy = 0;
-      if (keys.has('KeyW') || keys.has('ArrowUp')) dz += speed;
-      if (keys.has('KeyS') || keys.has('ArrowDown')) dz -= speed;
-      if (keys.has('KeyA') || keys.has('ArrowLeft')) dx -= speed;
-      if (keys.has('KeyD') || keys.has('ArrowRight')) dx += speed;
-      if (keys.has('KeyQ')) dy -= speed;
-      if (keys.has('KeyE')) dy += speed;
-      if (dx !== 0 || dz !== 0 || dy !== 0) camera.move(dx, dz, dy);
+    keys,
+    pressed,
+    // WASD / arrows as a movement axis: x = strafe right, y = forward.
+    axis() {
+      let x = 0;
+      let y = 0;
+      if (keys.has('KeyW') || keys.has('ArrowUp')) y += 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) y -= 1;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
+      return { x, y };
+    },
+    // Called at the end of each frame: edge presses live for one frame.
+    endFrame() {
+      pressed.clear();
     },
   };
 }

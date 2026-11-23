@@ -44,6 +44,8 @@ export function createCamera() {
   let pitch = -0.12;
   let dist = 220;
   let target = [400, 12, 420];
+  let lastDrag = -Infinity; // performance.now() of the last drag-look
+  let shakeAmp = 0; // camera shake amplitude (collision feedback)
 
   function eyePos() {
     const e = [
@@ -53,6 +55,11 @@ export function createCamera() {
     ];
     // Never let the eye sink under the street.
     e[1] = Math.max(3, e[1]);
+    if (shakeAmp > 0.01) {
+      e[0] += (Math.random() - 0.5) * shakeAmp;
+      e[1] += (Math.random() - 0.5) * shakeAmp * 0.6;
+      e[2] += (Math.random() - 0.5) * shakeAmp;
+    }
     return e;
   }
 
@@ -69,6 +76,36 @@ export function createCamera() {
     orbit(dyaw, dpitch) {
       yaw += dyaw;
       pitch = Math.max(-1.2, Math.min(0.4, pitch + dpitch));
+      lastDrag = performance.now();
+    },
+    // Seconds since the player last dragged the camera.
+    secondsSinceDrag(now) {
+      return (now - lastDrag) / 1000;
+    },
+    // Ease the yaw toward a target (shortest path), at most rate rad/s.
+    easeYawTo(targetYaw, dt, rate) {
+      let d = targetYaw - yaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const step = Math.max(-rate * dt, Math.min(rate * dt, d));
+      yaw += step;
+    },
+    // Ease the orbit target toward a point (follow camera).
+    easeTargetTo(p, dt, rate) {
+      const k = Math.min(1, rate * dt);
+      target[0] += (p[0] - target[0]) * k;
+      target[1] += (p[1] - target[1]) * k;
+      target[2] += (p[2] - target[2]) * k;
+    },
+    setPitch(p) {
+      pitch = Math.max(-1.2, Math.min(0.4, p));
+    },
+    setDist(d) {
+      dist = Math.max(6, Math.min(900, d));
+    },
+    // Collision feedback: shake the eye for a moment.
+    setShake(a) {
+      shakeAmp = a;
     },
     zoom(f) {
       dist = Math.max(8, Math.min(900, dist * f));

@@ -44,6 +44,12 @@ uniform float uFogDensity;
 uniform vec3 uCamPos;
 uniform vec3 uEmissiveColor;
 uniform float uEmissive;
+uniform vec3 uSpotPos[8];
+uniform vec3 uSpotDir[8];
+uniform vec3 uSpotColor[8];
+uniform float uSpotCos[8];
+uniform float uSpotPow[8];
+uniform int uSpotCount;
 out vec4 fragColor;
 void main() {
   vec3 n = normalize(vNormal);
@@ -53,8 +59,27 @@ void main() {
   vec3 r = reflect(-uSunDir, n);
   float spec = vSpec * pow(max(dot(r, v), 0.0), 24.0) * 0.7;
   vec3 color = base + vec3(spec) + uEmissiveColor * vEmissive * uEmissive;
-  float d = distance(uCamPos, vWorld);
-  float f = 1.0 - exp(-uFogDensity * uFogDensity * d * d);
+  // Headlight cones: real world-space spot lights. A horizontal surface
+  // still catches light (the 0.3 floor) because a beam hits the road at
+  // a shallow angle; without it the road would stay black at night.
+  for (int i = 0; i < 8; i++) {
+    if (i >= uSpotCount) break;
+    // Direction from the light to the surface: the cone test compares it
+    // against the beam direction (using surface-to-light here would flip
+    // the cone and light the road behind the car instead).
+    vec3 toSurf = vWorld - uSpotPos[i];
+    float d = length(toSurf);
+    toSurf /= d;
+    float c = dot(toSurf, uSpotDir[i]);
+    if (c > uSpotCos[i]) {
+      float beam = smoothstep(uSpotCos[i], uSpotCos[i] + 0.08, c);
+      float atten = 1.0 / (1.0 + (d / 45.0) * (d / 45.0));
+      float ndl = max(dot(n, -toSurf), 0.0);
+      color += uSpotColor[i] * uSpotPow[i] * beam * atten * (0.3 + 0.7 * ndl);
+    }
+  }
+  float dist = distance(uCamPos, vWorld);
+  float f = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
   color = mix(color, uFogColor, clamp(f, 0.0, 1.0));
   fragColor = vec4(color, 1.0);
 }`;
@@ -102,8 +127,9 @@ function shade(c, f) {
   return [c[0] * f, c[1] * f, c[2] * f];
 }
 
-// Geometry builder: plain arrays, one vertex at a time.
-function makeMesh() {
+// Geometry builder: plain arrays, one vertex at a time. Exported so the
+// per-frame dynamic mesh (cars, people, lenses) reuses the same builder.
+export function makeMesh() {
   const pos = [];
   const nrm = [];
   const col = [];
@@ -222,9 +248,37 @@ function makeMesh() {
     }
     disc(cx, cy + h, cz, r, [0, 1, 0], shade(color, 0.85), 0, 0, seg);
   }
+  // Axis-aligned box rotated by `heading` around Y. Local +z is the
+  // forward direction (sin h, cos h), local +x is the right side.
+  // Used for cars, people and anything else that turns.
+  function boxRot(cx, cy, cz, w, h, d, heading, color, e = 0, s = 0) {
+    const ch = Math.cos(heading);
+    const sh = Math.sin(heading);
+    const rot = (lx, lz) => [cx + lx * ch + lz * sh, cz - lx * sh + lz * ch];
+    const rotN = (nx, nz) => [nx * ch + nz * sh, -nx * sh + nz * ch];
+    const hw = w / 2;
+    const hd = d / 2;
+    const y0 = cy;
+    const y1 = cy + h;
+    const c000 = rot(-hw, -hd);
+    const c100 = rot(hw, -hd);
+    const c110 = rot(hw, hd);
+    const c010 = rot(-hw, hd);
+    const roof = shade(color, 0.78);
+    const nTop = [0, 1, 0];
+    const nF = rotN(0, 1);
+    const nB = rotN(0, -1);
+    const nR = rotN(1, 0);
+    const nL = rotN(-1, 0);
+    quad([c000[0], y1, c000[1]], [c100[0], y1, c100[1]], [c110[0], y1, c110[1]], [c010[0], y1, c010[1]], nTop, roof, e, s);
+    quad([c010[0], y0, c010[1]], [c110[0], y0, c110[1]], [c110[0], y1, c110[1]], [c010[0], y1, c010[1]], nF, color, e, s);
+    quad([c100[0], y0, c100[1]], [c000[0], y0, c000[1]], [c000[0], y1, c000[1]], [c100[0], y1, c100[1]], nB, color, e, s);
+    quad([c110[0], y0, c110[1]], [c100[0], y0, c100[1]], [c100[0], y1, c100[1]], [c110[0], y1, c110[1]], nR, color, e, s);
+    quad([c000[0], y0, c000[1]], [c010[0], y0, c010[1]], [c010[0], y1, c010[1]], [c000[0], y1, c000[1]], nL, color, e, s);
+  }
   return {
     pos, nrm, col, emi, spc, idx,
-    quad, box, groundQuad, streetQuad, pyramid, disc, cylinder,
+    quad, box, boxRot, groundQuad, streetQuad, pyramid, disc, cylinder,
     finish() {
       return {
         position: new Float32Array(pos),
@@ -369,15 +423,13 @@ function buildCityMesh(city) {
     m.box(l.x, 7, l.z, 1.6, 0.6, 1.6, [1, 0.85, 0.6], 1, 0);
   }
 
-  // Traffic lights at every intersection: pole + head, red one corner,
-  // green the opposite (static in Stage A; timing comes later).
+  // Traffic lights at every intersection: pole + head box. The lenses are
+  // dynamic (they follow the signal cycle) and live in the dynamic mesh.
   for (const it of city.intersections) {
     m.box(it.x + 10, 0, it.z + 10, 0.5, 6, 0.5, [0.15, 0.15, 0.16]);
     m.box(it.x + 10, 6, it.z + 10, 1.2, 2.6, 1.2, [0.1, 0.1, 0.1]);
-    m.quad([it.x + 9.3, 7.2, it.z + 10.65], [it.x + 10.7, 7.2, it.z + 10.65], [it.x + 10.7, 8.2, it.z + 10.65], [it.x + 9.3, 8.2, it.z + 10.65], [0, 0, 1], [0.9, 0.15, 0.15], 0.7, 0);
     m.box(it.x - 10, 0, it.z - 10, 0.5, 6, 0.5, [0.15, 0.15, 0.16]);
     m.box(it.x - 10, 6, it.z - 10, 1.2, 2.6, 1.2, [0.1, 0.1, 0.1]);
-    m.quad([it.x - 10.7, 5.6, it.z - 10.65], [it.x - 9.3, 5.6, it.z - 10.65], [it.x - 9.3, 6.6, it.z - 10.65], [it.x - 10.7, 6.6, it.z - 10.65], [0, 0, -1], [0.15, 0.85, 0.3], 0.7, 0);
   }
 
   // Boats in the harbour: hull + cabin.
@@ -386,31 +438,8 @@ function buildCityMesh(city) {
     m.box(b.x, 3, b.z, b.len * 0.45, 2.2, 8 * 0.7, [0.95, 0.95, 0.92]);
   }
 
-  // Parked cars: body + cabin + wheels.
-  for (const car of city.cars) {
-    const c = Math.cos(car.heading);
-    const s = Math.sin(car.heading);
-    // Body is axis-aligned for the two headings the city uses (0/90deg);
-    // heading PI/2 swaps length and width.
-    const along = Math.abs(s) > 0.5 ? 2 : 4.6;
-    const across = Math.abs(s) > 0.5 ? 4.6 : 2;
-    m.box(car.x, 0, car.z, along, 1.3, across, car.color, 0, 0.4);
-    m.box(car.x, 1.3, car.z, along * 0.55, 1.0, across * 0.85, [0.2, 0.25, 0.3], 0, 1);
-    for (const wx of [-1.5, 1.5]) {
-      for (const wz of [-0.9, 0.9]) {
-        const lx = Math.abs(s) > 0.5 ? wz : wx;
-        const lz = Math.abs(s) > 0.5 ? wx : wz;
-        m.box(car.x + lx, 0, car.z + lz, 0.7, 0.7, 0.7, [0.08, 0.08, 0.09]);
-      }
-    }
-    void c;
-  }
-
-  // Pedestrians: bright jacket + head.
-  for (const p of city.pedestrians) {
-    m.box(p.x, 0, p.z, 0.8, 1.8, 0.5, p.color);
-    m.box(p.x, 1.8, p.z, 0.5, 0.5, 0.5, [0.85, 0.7, 0.55]);
-  }
+  // Cars and pedestrians are dynamic now (they move, turn and get in and
+  // out of): the dynamic mesh draws them every frame from live state.
 
   return m.finish();
 }
@@ -521,6 +550,51 @@ export function createRenderer(canvas, city) {
   for (const name of ['uProj', 'uView', 'uSunDir', 'uSunColor', 'uAmbient', 'uFogColor', 'uFogDensity', 'uCamPos', 'uEmissiveColor', 'uEmissive']) {
     U[name] = gl.getUniformLocation(cityProg, name);
   }
+  // Headlight spot lights (up to 8 cones): arrays are set every frame.
+  const spotLoc = {
+    pos: gl.getUniformLocation(cityProg, 'uSpotPos'),
+    dir: gl.getUniformLocation(cityProg, 'uSpotDir'),
+    color: gl.getUniformLocation(cityProg, 'uSpotColor'),
+    cos: gl.getUniformLocation(cityProg, 'uSpotCos'),
+    pow: gl.getUniformLocation(cityProg, 'uSpotPow'),
+    count: gl.getUniformLocation(cityProg, 'uSpotCount'),
+  };
+
+  // Dynamic mesh: one VAO with buffers re-uploaded every frame (the cars,
+  // people and lenses move). Same attribute layout as the city mesh.
+  const dynVao = gl.createVertexArray();
+  gl.bindVertexArray(dynVao);
+  const dynPos = gl.createBuffer();
+  const dynNrm = gl.createBuffer();
+  const dynCol = gl.createBuffer();
+  const dynEmi = gl.createBuffer();
+  const dynSpc = gl.createBuffer();
+  const dynIdx = gl.createBuffer();
+  function dynAttrib(name, buf, size) {
+    const loc = gl.getAttribLocation(cityProg, name);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  }
+  dynAttrib('aPos', dynPos, 3);
+  dynAttrib('aNormal', dynNrm, 3);
+  dynAttrib('aColor', dynCol, 3);
+  dynAttrib('aEmissive', dynEmi, 1);
+  dynAttrib('aSpec', dynSpc, 1);
+  gl.bindVertexArray(null);
+
+  // Column-major mat4 multiply: out = a * b (b applied first).
+  function mat4Mul(a, b) {
+    const out = new Float32Array(16);
+    for (let c = 0; c < 4; c++) {
+      for (let r = 0; r < 4; r++) {
+        let sum = 0;
+        for (let k = 0; k < 4; k++) sum += a[k * 4 + r] * b[c * 4 + k];
+        out[c * 4 + r] = sum;
+      }
+    }
+    return out;
+  }
   const SU = {
     uProj: gl.getUniformLocation(skyProg, 'uProj'),
     uView: gl.getUniformLocation(skyProg, 'uView'),
@@ -528,6 +602,56 @@ export function createRenderer(canvas, city) {
 
   let preset = null;
   let hazeEnabled = true;
+  let pendingSample = null;
+  let lastSample = null;
+
+  // Pixel probe for the headlight test: the next rendered frame reads the
+  // given world points (a size x size square around each) with readPixels
+  // — called synchronously inside render(), so the drawing buffer is
+  // still valid. Result lands in lastSample: [{id, mean:[r,g,b], pixels,
+  // w, h, valid}]. main.js compares an OFF probe with an ON probe.
+  function runSample(vp) {
+    const W = canvas.width;
+    const H = canvas.height;
+    const out = [];
+    for (const pt of pendingSample) {
+      const x = pt.x;
+      const y = pt.y;
+      const z = pt.z;
+      const cx = vp[0] * x + vp[4] * y + vp[8] * z + vp[12];
+      const cy = vp[1] * x + vp[5] * y + vp[9] * z + vp[13];
+      const cw = vp[3] * x + vp[7] * y + vp[11] * z + vp[15];
+      if (cw <= 0.01) {
+        out.push({ id: pt.id, valid: false, mean: [0, 0, 0], pixels: [], w: 0, h: 0 });
+        continue;
+      }
+      const ndcX = cx / cw;
+      const ndcY = cy / cw;
+      const size = pt.size || 40;
+      const px = Math.round((ndcX * 0.5 + 0.5) * W - size / 2);
+      const pyTop = Math.round((1 - (ndcY * 0.5 + 0.5)) * H - size / 2);
+      const x0 = Math.max(0, Math.min(W - 1, px));
+      const y0 = Math.max(0, Math.min(H - 1, H - pyTop - size));
+      const w = Math.max(1, Math.min(size, W - x0));
+      const h = Math.max(1, Math.min(size, H - y0));
+      const buf = new Uint8Array(w * h * 4);
+      gl.readPixels(x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      const pixels = [];
+      for (let i = 0; i < w * h; i++) {
+        r += buf[i * 4];
+        g += buf[i * 4 + 1];
+        b += buf[i * 4 + 2];
+        pixels.push(buf[i * 4], buf[i * 4 + 1], buf[i * 4 + 2]);
+      }
+      const n = w * h;
+      out.push({ id: pt.id, valid: true, mean: [r / n, g / n, b / n], pixels, w, h, sx: px + size / 2, sy: pyTop + size / 2, ndcX, ndcY, cw });
+    }
+    lastSample = out;
+    pendingSample = null;
+  }
 
   function bindSkyAttribs(posBuf, colBuf) {
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
@@ -548,12 +672,21 @@ export function createRenderer(canvas, city) {
     setHazeEnabled(v) {
       hazeEnabled = v;
     },
+    requestSample(points) {
+      pendingSample = points;
+    },
+    get lastSample() {
+      return lastSample;
+    },
     resize(w, h) {
       canvas.width = w;
       canvas.height = h;
       gl.viewport(0, 0, w, h);
     },
-    render(camera, proj) {
+    // dyn: { mesh (finished dynamic mesh or null), spots: [{pos, dir,
+    // color, cos, pow}] (max 8), } — the sample request (if any) is taken
+    // at the end of this frame.
+    render(camera, proj, dyn) {
       if (!preset) return;
       gl.clearColor(preset.sky[0], preset.sky[1], preset.sky[2], 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -590,8 +723,53 @@ export function createRenderer(canvas, city) {
       gl.uniform3fv(U.uCamPos, camera.eye());
       gl.uniform3fv(U.uEmissiveColor, [1.0, 0.72, 0.42]);
       gl.uniform1f(U.uEmissive, preset.emissive);
+      // Headlight cones for this frame (0 when none).
+      const spots = (dyn && dyn.spots) || [];
+      const nSpots = Math.min(8, spots.length);
+      const posArr = new Float32Array(24);
+      const dirArr = new Float32Array(24);
+      const colArr = new Float32Array(24);
+      const cosArr = new Float32Array(8);
+      const powArr = new Float32Array(8);
+      for (let i = 0; i < nSpots; i++) {
+        posArr.set(spots[i].pos, i * 3);
+        dirArr.set(spots[i].dir, i * 3);
+        colArr.set(spots[i].color, i * 3);
+        cosArr[i] = spots[i].cos;
+        powArr[i] = spots[i].pow;
+      }
+      gl.uniform3fv(spotLoc.pos, posArr);
+      gl.uniform3fv(spotLoc.dir, dirArr);
+      gl.uniform3fv(spotLoc.color, colArr);
+      gl.uniform1fv(spotLoc.cos, cosArr);
+      gl.uniform1fv(spotLoc.pow, powArr);
+      gl.uniform1i(spotLoc.count, nSpots);
       gl.drawElements(gl.TRIANGLES, mesh.index.length, gl.UNSIGNED_INT, 0);
+
+      // The dynamic mesh (cars, people, lenses, rings, dust).
+      if (dyn && dyn.mesh && dyn.mesh.index.length > 0) {
+        const dm = dyn.mesh;
+        gl.bindVertexArray(dynVao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, dynPos);
+        gl.bufferData(gl.ARRAY_BUFFER, dm.position, gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, dynNrm);
+        gl.bufferData(gl.ARRAY_BUFFER, dm.normal, gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, dynCol);
+        gl.bufferData(gl.ARRAY_BUFFER, dm.color, gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, dynEmi);
+        gl.bufferData(gl.ARRAY_BUFFER, dm.emissive, gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, dynSpc);
+        gl.bufferData(gl.ARRAY_BUFFER, dm.spec, gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, dynIdx);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, dm.index, gl.DYNAMIC_DRAW);
+        gl.drawElements(gl.TRIANGLES, dm.index.length, gl.UNSIGNED_INT, 0);
+      }
       gl.bindVertexArray(null);
+
+      // Pixel probe, if one was requested (synchronous readPixels).
+      if (pendingSample) {
+        runSample(mat4Mul(proj, view));
+      }
     },
   };
 }

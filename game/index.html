@@ -18,7 +18,10 @@
   #speed .num { font-size: 44px; font-weight: bold; line-height: 1; }
   #speed .unit { font-size: 14px; }
   #fps { right: 18px; bottom: 74px; font-size: 13px; text-align: right; }
+  #damage { right: 18px; bottom: 96px; font-size: 14px; text-align: right; color: #d77f69; }
   #controls { left: 50%; bottom: 12px; transform: translateX(-50%); font-size: 14px; white-space: nowrap; }
+  #prompt { left: 50%; bottom: 44px; transform: translateX(-50%); font-size: 17px; font-weight: bold; color: #ffffff; white-space: nowrap; }
+  #toast { left: 50%; top: 52px; transform: translateX(-50%); font-size: 18px; font-weight: bold; color: #d77f69; white-space: nowrap; }
   #preset { display: none; }
 </style>
 </head>
@@ -33,7 +36,10 @@
 <canvas id="minimap" width="200" height="180"></canvas>
 <div class="hud" id="speed"><span class="num" id="speed-num">0</span> <span class="unit">km/h</span></div>
 <div class="hud" id="fps">— fps</div>
-<div class="hud" id="controls">Drag to look around · Scroll to zoom · WASD move · 1 / 2 / 3 midday / sunset / night · T cycle light</div>
+<div class="hud" id="damage"></div>
+<div class="hud" id="prompt"></div>
+<div class="hud" id="toast"></div>
+<div class="hud" id="controls">Drag to look around · Scroll to zoom · WASD walk · E enter car · 1 / 2 / 3 midday / sunset / night · T cycle light</div>
 <span id="preset">day</span>
 <script type="module" src="./src/main.js"></script>
 </body>
