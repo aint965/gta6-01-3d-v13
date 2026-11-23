@@ -40,9 +40,11 @@
   Old Solmar 196, South Market 165, Sunstrand Beach 55, Pearl Marina 32,
   Glasspoint 72, Citrus Quarter 270.
 - Headless (chrome-headless-shell + swiftshader, 1280×720):
-  **11 run, semua ready, 0 console/page error** — 4 shot (day/sunset/
-  night/plaza) + 5 run halaman default (byte-identik, 102.496 B) +
-  2 run ulang setelah edit. Screenshot 87–103 KiB (< 256 KiB).
+  **13 run, semua ready, 0 console/page error** — 1 shot awal +
+  4 shot setelah perbaikan kaca/kompas + 2 retake (sunset/plaza)
+  setelah perbaikan district + 5 run halaman default (byte-identik,
+  102.496 B) + 1 run akhir setelah edit revisi. Screenshot 87–103 KiB
+  (< 256 KiB).
 - Packaging: **2× byte-identik** — dossier sha256
   `a067c3114c4f74427eea99fc8453a248c493e698d6e977b40d17b1efd76aa75c`,
   557.919 B, 10 file game, 4 screenshot, 15 file total per output.
