@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palkon Auto — The Solmar Story</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #142d38; }
+  #game { display: block; width: 100vw; height: 100vh; }
+  .hud { position: fixed; color: #ead8b2; font-family: Georgia, 'Times New Roman', serif; text-shadow: 0 1px 3px rgba(0,0,0,0.6); pointer-events: none; z-index: 5; }
+  #title { top: 14px; left: 16px; }
+  #title .name { font-size: 26px; letter-spacing: 4px; font-weight: bold; }
+  #title .sub { font-size: 13px; letter-spacing: 3px; color: #d77f69; }
+  #district { margin-top: 4px; font-size: 14px; }
+  #compass { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; }
+  #minimap { position: fixed; top: 12px; right: 14px; width: 200px; height: 180px; border: 2px solid rgba(234, 216, 178, 0.7); z-index: 5; }
+  #speed { right: 18px; bottom: 14px; text-align: right; }
+  #speed .num { font-size: 44px; font-weight: bold; line-height: 1; }
+  #speed .unit { font-size: 14px; }
+  #fps { right: 18px; bottom: 74px; font-size: 13px; text-align: right; }
+  #controls { left: 50%; bottom: 12px; transform: translateX(-50%); font-size: 14px; white-space: nowrap; }
+  #preset { display: none; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div class="hud" id="title">
+  <div class="name">PALKON AUTO</div>
+  <div class="sub">THE SOLMAR STORY</div>
+  <div id="district">Solmar · Midday</div>
+</div>
+<canvas id="compass" width="220" height="26"></canvas>
+<canvas id="minimap" width="200" height="180"></canvas>
+<div class="hud" id="speed"><span class="num" id="speed-num">0</span> <span class="unit">km/h</span></div>
+<div class="hud" id="fps">— fps</div>
+<div class="hud" id="controls">Drag to look around · Scroll to zoom · WASD move · 1 / 2 / 3 midday / sunset / night · T cycle light</div>
+<span id="preset">day</span>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
